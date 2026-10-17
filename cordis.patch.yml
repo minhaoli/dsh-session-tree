@@ -1,0 +1,6 @@
+# dsh-session-tree bundle patch
+# 单行同时挂载两端：host 侧占位（lib/index.js）与浏览器侧（lib/client.js，
+# 接管 sidebar.workspaces 插槽，在官方会话树上叠加标签显示）。
+- insert:
+    - id: session-tree
+      name: 'dsh-session-tree'
