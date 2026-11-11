@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-tree",
   "description": "Enhanced session tree for the DSH sidebar (fork of ui-workspace): tag chips, group-by-tag, drag-to-move, workspace ordering, favourite sessions, four-state filter, delete with backup.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

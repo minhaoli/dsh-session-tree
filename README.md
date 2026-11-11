@@ -12,14 +12,13 @@ Forked from `@deepseek-ai/dsh-client-ui-workspace` (the 0.2.1 tree) and shipped 
 | `@deepseek-ai/cordis` | `~4.0.5` |
 | React | 18.2+ |
 | Mode | Web UI (`web` or `desktop` profile) |
-| Companion | [`dsh-session-manager`](https://github.com/minhaoli/dsh-session-manager) — tags, moves, deletes and the REST routes all come from it |
+| Companion | [`dsh-session-manager`](https://github.com/minhaoli/dsh-session-manager) — the source of the host half, vendored into this package; no separate install needed |
 
 Earlier DSH releases are untested.
 
 ## Install
 
 ```bash
-dsh plugin --profile <your-profile> add github:minhaoli/dsh-session-manager
 dsh plugin --profile <your-profile> add github:minhaoli/dsh-session-tree
 ```
 
@@ -31,19 +30,32 @@ Then **disable the official `ui-workspace` row**, because this package registers
   disabled: true
 ```
 
+Do not mount `dsh-session-manager` as well: its host half is vendored into this package, and mounting both registers the same tools and routes twice.
+
 Reload the page after installing — the client half is served as a separate module.
 
-## The host half forwards to session-manager
+## The host half is a vendored session-manager
 
-`lib/index.js` is no longer a no-op placeholder; it forwards to `../../session-manager.js`:
+This plugin's host half is the host half of `dsh-session-manager`, shipped as a vendored copy in `lib/host.js` and imported by `lib/index.js`:
 
 ```js
-import applySessionManager from "../../session-manager.js";
+import applySessionManager from "./host.js";
 ```
 
-It also declares six host services through `apply.inject` (`tools`, `workspaceRegistry`, `storageDomain`, `sessionPersistence`, `systemPrompt`, `webServer`), exactly as `session-manager.js` declares them itself. That keeps the profile to a single plugin row while `session-manager.js` stays the only implementation, unmodified.
+`lib/index.js` declares the six host services through `apply.inject` (`tools`, `workspaceRegistry`, `storageDomain`, `sessionPersistence`, `systemPrompt`, `webServer`), exactly as the host half declares them itself.
 
-The forwarding therefore **requires that file to exist**: `<profile>/plugins/session-manager.js`, i.e. the host file of `dsh-session-manager` placed under the profile's `plugins/` directory. Without it the host half fails to import and the plugin is never composed. This is a hard constraint of the current release, not an option.
+That makes the package self-contained: no `session-manager.js` has to be placed in a profile's `plugins/` directory, and it does not matter whether `dsh-session-manager` is installed on the machine.
+
+The head of `lib/host.js` records the source repository, the upstream commit and the sha256 of the upstream file. To follow upstream, regenerate it with the script instead of editing by hand:
+
+```bash
+git clone https://github.com/minhaoli/dsh-session-manager ../dsh-session-manager
+node scripts/sync-host.mjs ../dsh-session-manager
+```
+
+The cost is that roughly 60 KB of code now exists in two repositories. The sync script refuses a source that does not export `apply` and writes the digest into the file head, so the drift between the two stays visible.
+
+Because this copy already registers the six agent tools and the `/api/dsh-session-manager/` routes, **do not mount `dsh-session-manager` itself at the same time**: both would register the same tools and routes.
 
 ## The session-manager REST dependency
 
@@ -108,12 +120,18 @@ Internally this is still `archivedFilter` + `favoriteFilter`, but the four optio
 
 ## Implementation notes
 
-- `lib/index.js` is the host-side forwarding entry described above.
+- `lib/index.js` is the host-side entry: it mounts the vendored host half (`lib/host.js`) into this plugin's scope and declares the six host services it needs.
 - `lib/client.js` (269,814 bytes, 6,225 lines) is the built fork. Its `sourceMappingURL` still points at the upstream package and the CSS tag keeps `dataset.plugin` at the upstream name — that is provenance, not a bug.
 - `client.js` defines `class UiWorkspaceService extends Service` and calls `super(ctx, "uiWorkspace")`. That is why the official row must be disabled: two registrations of `uiWorkspace` cannot coexist.
 - The package mounts into `sidebar.workspaces.session.menu.item`, `sidebar.workspaces.session.row.action` and `shell.overlay`, and injects the official client packages it builds on (`dsh-api-remotes`, `dsh-api-session-controller`, `dsh-api-workspace-controller`, `dsh-client-connection`, `dsh-client-locale`, `dsh-client-shortcuts`, `dsh-client-ui-conversation`, `dsh-client-ui-layout`, `dsh-client-ui-renderer`, `dsh-client-ui-session`, `dsh-client-ui-sidebar`).
 
 ## Changelog
+
+### 0.3.1
+
+- the host half changed from "a forward into the profile's `session-manager.js`" to a **vendored copy** (`lib/host.js`): installing no longer depends on a file outside the package
+- added `scripts/sync-host.mjs`, which regenerates the vendored copy from an upstream checkout and records the source commit and sha256 in the file head
+- docs: install is one command now, and mounting `dsh-session-manager` alongside is called out as unsupported
 
 ### 0.3.0
 

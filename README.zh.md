@@ -12,14 +12,13 @@ fork 自 `@deepseek-ai/dsh-client-ui-workspace`（0.2.1 的树），独立成包
 | `@deepseek-ai/cordis` | `~4.0.5` |
 | React | 18.2+ |
 | 运行模式 | Web UI（`web` 或 `desktop` profile） |
-| 配套 | [`dsh-session-manager`](https://github.com/minhaoli/dsh-session-manager) —— 标签、移动、删除、REST 路由都来自它 |
+| 配套 | [`dsh-session-manager`](https://github.com/minhaoli/dsh-session-manager) —— host 半的来源，已内联在本包内，无需单独安装 |
 
 更早的 DSH 版本未验证。
 
 ## 安装
 
 ```bash
-dsh plugin --profile <你的 profile> add github:minhaoli/dsh-session-manager
 dsh plugin --profile <你的 profile> add github:minhaoli/dsh-session-tree
 ```
 
@@ -31,19 +30,32 @@ dsh plugin --profile <你的 profile> add github:minhaoli/dsh-session-tree
   disabled: true
 ```
 
+不要再单独挂载 `dsh-session-manager` —— 它的 host 半已经内联在本包里，重复挂载会让工具与路由注册两次。
+
 装完刷新一次页面 —— 浏览器侧是作为独立模块提供的。
 
-## host 侧转发到 session-manager
+## host 半：内联的 session-manager
 
-`lib/index.js` 不再是无行为的占位，而是转发到 `../../session-manager.js`：
+本插件的 host 半就是 `dsh-session-manager` 的 host 半，以**内联副本**放在 `lib/host.js`，由 `lib/index.js` 导入：
 
 ```js
-import applySessionManager from "../../session-manager.js";
+import applySessionManager from "./host.js";
 ```
 
-它同时用 `apply.inject` 声明了 6 个 host 服务依赖（`tools`、`workspaceRegistry`、`storageDomain`、`sessionPersistence`、`systemPrompt`、`webServer`），与 `session-manager.js` 自身完全一致。这样就可以在配置层只注册一个插件条目，`session-manager.js` 保持单一实现、原文件不动。
+`lib/index.js` 同时用 `apply.inject` 声明 6 个 host 服务依赖（`tools`、`workspaceRegistry`、`storageDomain`、`sessionPersistence`、`systemPrompt`、`webServer`），与该 host 半自身完全一致。
 
-因此这个转发**要求该文件真实存在**：`<profile>/plugins/session-manager.js`（即 `dsh-session-manager` 的 host 文件放在 profile 的 `plugins/` 目录下）。文件不在位时 host 半导入失败，插件不会被组合。这是当前版本的一个硬约束，不是可选项。
+这样安装本包是自足的：不需要在 profile 的 `plugins/` 里另放 `session-manager.js`，也不管 `dsh-session-manager` 是否装在这台机器上。
+
+`lib/host.js` 头部记着来源仓库、上游 commit 与源文件 sha256。要跟随上游更新，用脚本重新生成，不要手改：
+
+```bash
+git clone https://github.com/minhaoli/dsh-session-manager ../dsh-session-manager
+node scripts/sync-host.mjs ../dsh-session-manager
+```
+
+代价是这份约 60 KB 的代码在两个仓库里各存一份。同步脚本会校验源文件确实导出 `apply`，并把 digest 写进文件头，所以两边的差异是可见的。
+
+因为这份副本已经注册了 6 个 agent 工具和 `/api/dsh-session-manager/` 路由，**不要同时挂载 `dsh-session-manager` 本身**：两处会注册同一批工具与路由。
 
 ## 对 session-manager 的 REST 依赖
 
@@ -108,12 +120,18 @@ import applySessionManager from "../../session-manager.js";
 
 ## 实现说明
 
-- `lib/index.js` 是 host 侧转发入口，见上文。
+- `lib/index.js` 是 host 侧入口：把内联的 host 半（`lib/host.js`）挂进本插件的作用域，并声明它需要的 6 个 host 服务。
 - `lib/client.js`（269814 字节、6225 行）是构建出来的 fork 产物，基线为官方 `dsh-client-ui-workspace` bundle，在其上叠加注入与增强块。它的 `sourceMappingURL` 仍指向上游包、CSS 标签的 `dataset.plugin` 也还是上游名 —— 这是来源标记，不是 bug。
 - `client.js` 里定义了 `class UiWorkspaceService extends Service` 并调用 `super(ctx, "uiWorkspace")`。这就是必须停掉官方那行的原因：同一个 `uiWorkspace` 注册不了两次。
 - 本包挂到 `sidebar.workspaces.session.menu.item`、`sidebar.workspaces.session.row.action` 和 `shell.overlay`，并注入它构建所依赖的官方客户端包（`dsh-api-remotes`、`dsh-api-session-controller`、`dsh-api-workspace-controller`、`dsh-client-connection`、`dsh-client-locale`、`dsh-client-shortcuts`、`dsh-client-ui-conversation`、`dsh-client-ui-layout`、`dsh-client-ui-renderer`、`dsh-client-ui-session`、`dsh-client-ui-sidebar`）。
 
 ## 更新日志
+
+### 0.3.1
+
+- host 半从「转发到 profile 里的 `session-manager.js`」改为**内联副本**（`lib/host.js`）：安装不再依赖包外文件，别人也能直接装
+- 新增 `scripts/sync-host.mjs`，从上游检出重新生成内联副本，并把来源 commit 与 sha256 写进文件头
+- 文档：安装改为一条命令，并明确「不要同时挂载 `dsh-session-manager`」
 
 ### 0.3.0
 
